@@ -1,0 +1,384 @@
+<!doctype html>
+<html>
+	<head>
+		<meta charset="utf-8">
+		<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+
+		<title>Datetime and timezones</title>
+
+		<link rel="stylesheet" href="dist/reset.css">
+		<link rel="stylesheet" href="dist/reveal.css">
+		<link rel="stylesheet" href="dist/theme/black.css">
+
+		<!-- Theme used for syntax highlighted code -->
+		<link rel="stylesheet" href="plugin/highlight/monokai.css">
+
+		<script>
+			Reveal.addEventListener('slidechanged', function(event) {
+				var gifAttr = event.currentSlide.getAttribute('data-gif');
+				if (gifAttr && gifAttr === 'repeat') {
+					var img = event.currentSlide.querySelector('img');
+					var gif = img.getAttribute('src');
+
+					img.setAttribute('src', gif + '?t=' + (new Date().getTime()));
+				}
+			}, false);
+		</script>
+	</head>
+	<body>
+		<div class="reveal">
+			<div class="slides">
+				<section data-markdown data-separator-vertical="^--$">
+					<textarea data-template>
+						# Datetime and timezones
+
+						---
+
+						## How to represent a fixed point in time?
+
+						(And how to store it?)  <!-- .element: class="fragment fade-out" data-fragment-index="1" -->
+
+						* a date: 2022-11-02 <!-- .element: class="fragment" data-fragment-index="1" -->
+						* a time: 14:47:00 <!-- .element: class="fragment" -->
+						* a datetime: 2022-11-02 14:47:00 🎉 <!-- .element: class="fragment" -->
+
+						Notes:
+						I use the Python naming convention here.
+						
+						* which time in that day?
+						* which date?
+
+						---
+
+						wait... where?
+
+						---
+
+						## Timezones
+
+						> A time zone is an area which observes a uniform standard time for legal, commercial and social purposes.
+
+						Compiled in the standard "tz database" (maintained by ICANN since 2011).
+
+						--
+
+						## Timezones
+
+						Same point in time, different datetimes:
+						* Europe/Paris, 2022-11-02 14:47:00
+						* Europe/Berlin, 2022-11-02 14:47:00
+						* America/New_York, 2022-11-02 9:47:00
+						* Asia/Kolkat, 2022-11-02 19:**17**:00
+						* Australia/Sydney, 2022-11-**03** 00:47:00
+
+						Notes:
+
+						* Paris and Berlin share the same timezone
+						* New York is 5 hours behind Paris
+						* Kolkat is 4h30 before Paris
+						* Sydney is 10h before Paris, different date
+
+						---
+
+						## Timezone and DST
+
+						DST (Daylight saving time) is the "summer time".
+
+						What time is 2022-10-30 02:30:00 in timezone Europe/Paris?
+						
+						1. 2022-10-30 02:30:00 in summer time
+						1. 2022-10-30 02:30:00 in winter time
+
+						<p class="fragment">We can't know! 😱</p>
+
+						<a class="fragment" style="font-size: small" href="https://www.youtube.com/watch?v=-5wpm-gesOY">The problem with time and timezones</a>
+
+						Notes:
+						We call this an overlap. In the same way there is a gap when the clock change in the other way.
+
+						---
+
+						## Offsets
+
+						Using an offset from UTC:
+						1. summer time: 2022-10-30 02:30:00, offset of +2h
+						2. winter time: 2022-10-30 02:30:00, offset of +1h
+
+						Two different points in time!
+
+						--
+
+						## Offsets
+
+						![](monitoring.png)
+
+						---
+
+						## Theory recap
+
+						We want offset in our datetimes!
+
+						Standard format ISO 8601: 2022-10-30T02:30:00+02.
+
+						* 2022-10-30T02:30:00 is missing half the information
+						* 2022-10-30T02:30:00 Europe/Paris is confusing
+
+						Notes:
+						From now I will use "timezone" and "offset" interchangeably, but you now know that we should use offset when possible.
+
+						---
+
+						## Counter arguments to offsets use
+
+						1. Just use the local timezone!
+						2. Just use UTC!
+
+						--
+
+						### Just use the local timezone
+
+						Corner cases:
+						* distributed environment (eg: Internet)
+						* the local timezone change
+
+						--
+
+						### Just use the local timezone
+
+						1. the API runs in a VM, timezone is Europe/Paris
+						2. the API is migrated to a docker container, timezone is UTC (by default)
+						3. other APIs are still in VMs, timezone is Europe/Paris
+
+						Notes:
+						case of EstimaAPI
+
+						--
+
+						### Just use the local timezone
+						<!-- .slide: data-gif="repeat" -->
+
+						<img src="explosion.webp" />
+
+						Notes:
+						Case about the job processing events with a 2h lag.
+
+						--
+
+						### Just use UTC
+
+						What if someone sends us a _not utc_ datetime? We can't know.
+
+						Your system is not robust.
+
+						Notes:
+
+						You could assume UTC but you can't guarantee that it is.
+
+						You are faillible to someone sending you a wrong date.
+
+						---
+
+						## How to properly manage datetime?
+
+						---
+
+						### Docker
+
+						* default to UTC timezone
+						* to set the local timezone:
+						  
+						```ENV TZ=Europe/Paris```
+
+						---
+
+						### PostgreSQL
+
+						Two different types:
+						* `TIMESTAMP [WITHOUT TIMEZONE]`
+						* `TIMESTAMP WITH TIME ZONE`
+
+						Use `WITH TIME ZONE`!
+
+						--
+
+						### PostgreSQL
+
+						Columns with `TIMESTAMP WITH TIME ZONE`
+						* internally stored in UTC
+						* convert inserted datetimes to UTC
+						* convert read datetimes to the session timezone
+
+						--
+
+						### PostgreSQL
+
+						<pre><code data-line-numbers="1|3-8"># create table test (datetime timestamp with time zone);
+						CREATE TABLE
+						# insert into test values
+						# ('2022-10-30T02:30'),
+						# ('2022-10-30T02:30+01'),
+						# ('2022-10-30T02:30+02'),
+						# ('2022-10-30T02:30 Europe/Paris'),
+						# ('2022-10-30T02:30 Asia/Kolkata');
+						INSERT 0 5
+						</code></pre>
+
+						--
+
+						### PostgreSQL
+
+						<pre><code data-line-numbers="1,2,3,4,6,8,10,12"># select * from test;
+								datetime        
+						------------------------
+						2022-10-30 02:30:00+01
+						  -- '2022-10-30T02:30'
+						2022-10-30 02:30:00+01
+						  -- '2022-10-30T02:30+01'
+						2022-10-30 02:30:00+02
+						  -- '2022-10-30T02:30+02'
+						2022-10-29 23:00:00+02
+						  -- '2022-10-30T02:30 Asia/Kolkata'
+						2022-10-30 02:30:00+01
+						  -- '2022-10-30T02:30 Europe/Paris'
+						</code></pre>
+
+						--
+
+						### PostgreSQL
+
+						```
+						# set timezone to 'Asia/Kolkata';
+						SET
+						# select * from test;
+								datetime          
+						---------------------------
+						2022-10-30 07:00:00+05:30
+						2022-10-30 07:00:00+05:30
+						2022-10-30 06:00:00+05:30
+						2022-10-30 07:00:00+05:30
+						2022-10-30 02:30:00+05:30
+						```
+
+						--
+
+						### PostgreSQL
+
+						Local session timezone, by priority:
+						1. set with `SET TIMEZONE`
+						2. infered from the `PGTZ` env var (if using libpq)
+						3. defined in the server configuration
+
+						You should define `PGTZ` to the same value as `TZ`.
+
+						---
+						
+						### In backend code
+
+						Always use datetime object with timestamp! For APIs, it means:
+						* when parsing requests
+						* when serializing responses
+
+						Require offsets in your APIs!
+
+						We don't care the datetime offset as long as it have one.
+
+						--
+
+						#### Python
+
+						Python does not help us 😭
+						* same type for naive and timezone aware datetime
+						* stdlib methods return naive datetime by default
+
+						```Python
+						>>> from datetime import datetime, timezone
+						>>> datetime.now().isoformat()
+						'2022-11-02T17:27:43.479401'  # no offset :'(
+						>>> datetime.utcnow().isoformat()
+						'2022-11-02T16:27:46.318623'  # utc, but still no offset :''(
+						>>> datetime.now(timezone.utc).isoformat()
+						'2022-11-02T16:27:48.972720+00:00'  # finally!
+						>>> datetime.now(timezone.utc).astimezone().isoformat()
+						'2022-11-02T17:27:50.706952+01:00'
+						```
+
+						--
+
+						#### Python
+
+						Since Python 3.9:
+
+						```Python
+						>>> datetime.now(ZoneInfo("Europe/Paris")).isoformat()
+						'2022-11-02T17:29:51.111588+01:00'
+						>>> datetime.now(ZoneInfo("Asia/Kolkata")).isoformat()
+						'2022-11-02T22:00:03.358616+05:30'
+						>>> datetime.now(ZoneInfo("Asia/Kolkata")) \
+						... .astimezone(ZoneInfo("America/New_York")).isoformat()
+						'2022-11-02T12:31:05.212917-04:00'
+						```
+
+						---
+
+						## In frontend code
+
+						Always use datetime object with timezone!
+						* when serializing requests to APIs
+						* when parsing responses from APIs
+
+						Convert the datetime to local timezone before presenting it.
+
+						---
+
+						## Conclusion
+
+						* use timezone aware datetimes in your code
+						* use timezone aware columns in your database
+						* expose and require timezone in your APIs
+						* configure your env (if concerned) with `TZ` and `PGTZ`
+
+						--
+
+						### A typical flow
+
+						Write:
+						1. <!-- .element: class="fragment" --> a user in New York makes a interaction in the browser
+						1. <!-- .element: class="fragment" --> <pre><code>POST /something {created: '2022-11-02T17:46:00-04'}</code></pre>
+						1. <!-- .element: class="fragment" --> parse it with the offset
+						1. <!-- .element: class="fragment" --> save it into the db: <pre><code>insert into ... values ('2022-11-02T12:46:00-04')</code></pre>
+
+						--
+
+						### A typical flow
+
+						Read:
+						1. <!-- .element: class="fragment" --> <pre><code>GET /something</code></pre>
+						1. <!-- .element: class="fragment" --> <pre><code>select * from ... -> '2022-11-02T17:46:00+01</code></pre>
+						1. <!-- .element: class="fragment" --> serialize it with the offset
+						1. <!-- .element: class="fragment" --> the front end convert it to the user local timezone and show it: '11/02/2022, 12:46:00'
+
+						---
+
+						## Thank you!
+					</textarea>
+				</section>
+			</div>
+		</div>
+
+		<script src="dist/reveal.js"></script>
+		<script src="plugin/notes/notes.js"></script>
+		<script src="plugin/markdown/markdown.js"></script>
+		<script src="plugin/highlight/highlight.js"></script>
+		<script>
+			// More info about initialization & config:
+			// - https://revealjs.com/initialization/
+			// - https://revealjs.com/config/
+			Reveal.initialize({
+				hash: true,
+
+				// Learn about plugins: https://revealjs.com/plugins/
+				plugins: [ RevealMarkdown, RevealHighlight, RevealNotes ]
+			});
+		</script>
+	</body>
+</html>
